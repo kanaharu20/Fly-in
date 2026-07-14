@@ -1,6 +1,7 @@
-def main():
-    print("Hello from fly-in!")
+#! /usr/bin/env python3
 
+def main() -> None:
+    
 
 if __name__ == "__main__":
     main()
