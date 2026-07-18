@@ -95,6 +95,39 @@ class DataProcesser(ABC):
 
 class HubProcesser(DataProcesser):
     def validate(self, data: str):
+        valid: list[str] = ["start_hub", "hub", "end_hub"]
+        tmp: list[str] = data.strip().split(":", " ")
+        if not len(tmp) == 4:
+            return False
+        if tmp[0] not in valid:
+            return False
+        if not all[isinstance(tmp[2], int), isinstance(tmp[3], int)]:
+            return False
+        if not all[tmp[4].startswith("["), tmp[4].endswith("]")]:
+            return False
+        meta_data: list = tmp[4].strip("[", "]").split("=", " ")
+        if meta_data % 2 == 1:
+            return False
+        i: int = 0
+        while meta_data[i]:
+            if i % 2 == 0:
+                if meta_data[i] not in ["color", "max_drones"]:
+                    return False
+            else:
+                if meta_data[i - 1] == "max_drones":
+                    if not isinstance(meta_data[i], int):
+                        return False
+            i += 1
+        return True
+
+    def ingest(self, data) -> None:
+        if self.validate(data):
+            self._processed_data.append(data)
+        return
+
+
+class ConnectionProcesser(DataProcesser):
+    def validate(self, data: str):
         tmp: list[str] = data.strip().split(":")
         if "connection" in tmp[0]:
             if len(tmp) == 2:
@@ -108,11 +141,3 @@ class HubProcesser(DataProcesser):
                             return True
         else:
             return False
-
-    def ingest(self, data):
-        if self.validate(data):
-            self._processed_data.append()
-        return super().ingest(data)
-
-
-class ConnectionProcesser(DataProcesser):
