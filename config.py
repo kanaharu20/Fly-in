@@ -76,13 +76,13 @@ class ProcessedData:
     def append_zone(self, zone: Zone) -> None:
         self._zone_list.append(zone)
 
-    def append_connection(self, connection:Connection) -> None:
+    def append_connection(self, connection: Connection) -> None:
         self._connection_list.append(connection)
 
 
 class DataProcesser(ABC):
     def __init__(self) -> None:
-        self._processed_data: list[Any] = []
+        self._processed_data: list[str] = []
 
     @abstractmethod
     def validate(self, data: str) -> bool:
@@ -101,9 +101,13 @@ class HubProcesser(DataProcesser):
             return False
         if tmp[0] not in valid:
             return False
-        if not all[isinstance(tmp[2], int), isinstance(tmp[3], int)]:
+        if not all[
+            isinstance(tmp[2], int), isinstance(tmp[3], int)
+                ]:
             return False
-        if not all[tmp[4].startswith("["), tmp[4].endswith("]")]:
+        if not all[
+            tmp[4].startswith("["), tmp[4].endswith("]")
+                ]:
             return False
         meta_data: list = tmp[4].strip("[", "]").split("=", " ")
         if meta_data % 2 == 1:
@@ -111,7 +115,9 @@ class HubProcesser(DataProcesser):
         i: int = 0
         while meta_data[i]:
             if i % 2 == 0:
-                if meta_data[i] not in ["color", "max_drones"]:
+                if meta_data[i] not in [
+                    "color", "max_drones"
+                        ]:
                     return False
             else:
                 if meta_data[i - 1] == "max_drones":
@@ -123,21 +129,31 @@ class HubProcesser(DataProcesser):
     def ingest(self, data) -> None:
         if self.validate(data):
             self._processed_data.append(data)
-        return
 
 
 class ConnectionProcesser(DataProcesser):
     def validate(self, data: str):
-        tmp: list[str] = data.strip().split(":")
-        if "connection" in tmp[0]:
-            if len(tmp) == 2:
-                if len(tmp[1].sprit("-")) == 2:
-                    return True
-                elif len(tmp) == 3:
-                    if "max_link_capacity=" in tmp[2]:
-                        if tmp[2].startswith(
-                            "["
-                            ) and tmp[2].endswith("]"):
-                            return True
-        else:
+        tmp: list[str] = data.strip().split(":", " ")
+        if len(tmp) != 2 or 3:
             return False
+        if len(tmp[[1].split("-")]) != 2:
+            return False
+        if len(tmp) == 3:
+            if not all[
+                tmp[2].startswith("["), tmp[2].emdswith("]")
+            ]:
+                return False
+            meta_data: list[str] = tmp[2].strip("[", "]").split("=")
+            if meta_data == 2:
+                if meta_data[0].strip() != "max_link_capacity":
+                    return False
+            else:
+                return False
+        if tmp[0].strip() != "connection":
+            return False
+        return True
+
+    def ingest(self, data) -> None:
+        if self.validate(data):
+            self._processed_data.append(data)
+
