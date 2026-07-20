@@ -22,9 +22,6 @@ class Drone(BaseModel):
     def update_coodinate(self, xy: tuple[int, int]) -> None:
         self.xy = xy
 
-    def reach_goal(self) -> None:
-        self.at_goal = True
-
 
 class Zone(BaseModel):
     name: str
@@ -53,12 +50,23 @@ class ProcessedData:
         self._zone_dict: dict[str, Zone] = {}
         self._connection_dict: dict[set, Connection] = {}
         self._zone_name_list: list[str] = []
+        self._start_hub: Zone
+        self._end_hub: Zone
+        self._drone_dict: dict[int, Drone] = {}
+
+    def create_drones(self, nb: int) -> dict[int, Drone]:
+        for id in range(nb):
+            self._drone_dict[id] = Drone(
+                id=id, xy=self._start_hub.xy
+                )
 
     def append_zone(self, data: list[tuple]) -> None:
         for line in data:
             tmp: list[str] = list(x for x in re.split(
                 r"[: ]", line[1].strip()) if x
-                    )[1:]
+                    )
+            keyword: str = tmp[0]
+            tmp = tmp[1:]
             xy: tuple[int, int] = int(tmp[1]), int(tmp[2])
             color: str = ""
             max_drones: int = 1
@@ -85,11 +93,16 @@ class ProcessedData:
                 name=tmp[0], xy=xy, color=color,
                 max_drones=max_drones, zone_type=zone_type
                 )
-            self._zone_dict[tmp[0]] = zone
-            self._zone_name_list.append(tmp[0])
+            if keyword == "start_hub":
+                self._start_hub = zone
+            elif keyword == "end_hub":
+                self._end_hub = zone
+            else:
+                self._zone_dict[tmp[0]] = zone
+                self._zone_name_list.append(tmp[0])
 
     def append_connection(self, data: list[tuple]) -> None:
-        zone_name_list: list[str] = []
+        zone_name_list: list[str] = [self._start_hub.name, self._end_hub.name]
         for zone in self._zone_dict.values():
             zone_name_list.append(zone.name)
         for line in data:
@@ -115,47 +128,63 @@ class DataProcesser(ABC):
         self._processed_data: list[tuple] = []
 
     @abstractmethod
-    def validate(self, data: str) -> bool:
+    def validate(self, data: str, line_num: int) -> bool:
         ...
 
     @abstractmethod
-    def ingest(self, data: str) -> None:
+    def ingest(self, data: str, line_num: int) -> None:
         ...
 
     def output(self) -> str:
         return self._processed_data
 
 
+class DroneNumProcesser(DataProcesser):
+    def validate(self, data: str, line_num: int):
+        tmp: list[str] = data.strip().split(":")
+        if tmp[0].strip() != "nb_drones":
+            return False
+        if len(tmp) != 2:
+            raise ValueError(f"at line {line_num} error occered")
+        if not tmp[1].strip().isdigit():
+            raise ValueError(f"at line {line_num} error occered")
+        return True
+
+    def ingest(self, data: str, line_num: int) -> None:
+        tmp: list[str] = data.strip().split(":")
+        self._processed_data = (line_num, int(tmp[1].strip()))
+
+
 class HubProcesser(DataProcesser):
-    def validate(self, data: str):
+    def validate(self, data: str, line_num: int):
         valid: list[str] = ["start_hub", "hub", "end_hub"]
         tmp: list[str] = list(x for x in re.split(r"[: ]", data.strip()) if x)
-        if len(tmp) < 5:
-            return False
         if tmp[0] not in valid:
-            return False
+            raise False
+        if len(tmp) < 5:
+            raise ValueError(f"at line {line_num} error occered")
         if not all(
             [tmp[2].lstrip("-").isdigit(), tmp[3].lstrip("-").isdigit()]
                 ):
-            return False
+            raise ValueError(f"at line {line_num} error occered")
         bracket: str = " ".join(tmp[4:])
         if not all([bracket.startswith("["), bracket.endswith("]")]):
-            return False
+            raise ValueError(f"at line {line_num} error occered")
         meta_data: list = bracket.strip("[]").split(" ")
         meta_data = [part for pair in meta_data for part in pair.split("=")]
         if len(meta_data) % 2 == 1:
-            return False
+            raise ValueError(f"at line {line_num} error occered")
         i: int = 0
         while i < len(meta_data):
             if i % 2 == 0:
                 if meta_data[i] not in [
                     "color", "max_drones", "zone"
                         ]:
-                    return False
+                    raise ValueError(f"at line {line_num} error occered")
             else:
                 if meta_data[i - 1] == "max_drones":
                     if not meta_data[i].isdigit():
-                        return False
+                        raise ValueError(f"at line {line_num} error occered")
             i += 1
         return True
 
@@ -165,23 +194,23 @@ class HubProcesser(DataProcesser):
 
 
 class ConnectionProcesser(DataProcesser):
-    def validate(self, data: str):
+    def validate(self, data: str, line_num: str):
         tmp: list[str] = list(x for x in re.split(r"[ :]", data.strip()) if x)
+        if tmp[0].strip() != "connection":
+            return False
         if len(tmp) not in (2, 3):
-            return False
+            raise ValueError(f"at line {line_num} error occered")
         if len(tmp[1].split("-")) != 2:
-            return False
+            raise ValueError(f"at line {line_num} error occered")
         if len(tmp) == 3:
             if not all([tmp[2].startswith("["), tmp[2].endswith("]")]):
-                return False
+                raise ValueError(f"at line {line_num} error occered")
             meta_data: list[str] = tmp[2].strip("[]").split("=")
             if len(meta_data) == 2:
                 if meta_data[0].strip() != "max_link_capacity":
-                    return False
+                    raise ValueError(f"at line {line_num} error occered")
             else:
-                return False
-        if tmp[0].strip() != "connection":
-            return False
+                raise ValueError(f"at line {line_num} error occered")
         return True
 
     def ingest(self, data: str, line_num: int) -> None:
@@ -199,20 +228,41 @@ class DataStream:
     def process_stream(self, stream: list[str]) -> None:
         i: int = 0
         while i < len(stream):
+            if not stream[i] or stream[i].startswith("#"):
+                i += 1
+                continue
+            is_processed: int = 0
             for processer in self._processers:
                 if processer.validate(stream[i]) is True:
                     processer.ingest(stream[i], i)
+                    is_processed = 1
+                    break
+            if is_processed == 0:
+                raise ValueError(f"at line {i} invalid value.")
             i += 1
 
 
 def read_file() -> list[str]:
     argv: list[str] = sys.argv
     filename: str = argv[1]
-    try:
-        with open(filename) as fd:
-            ret: list[str] = fd.readlines()
-    except Exception as e:
-        print(e)
+    with open(filename) as fd:
+        raw: list[str] = fd.readlines()
+    ret: list[str] = []
+    for line in raw:
+        ret.append(line.strip())
+    meaningful: list[str] = [
+        line for line in ret if line and not line.startswith("#")
+        ]
+    if not meaningful or not meaningful[0].startswith("nb_drones"):
+        raise ValueError(
+            "'nb_drones' must be decleared at the first line."
+            )
+    for line in meaningful[1:]:
+        if line.startswith("nb_drones"):
+            raise ValueError(
+                "'nb_drones' must be decleared at the first line."
+                )
+
     return ret
 
 
@@ -220,10 +270,13 @@ def setup() -> None:
     config: list[str] = read_file()
     hubprc = HubProcesser()
     conprc = ConnectionProcesser()
+    dronenumprc = DroneNumProcesser()
     datastream = DataStream()
     prcddata = ProcessedData()
     datastream.register_processer(hubprc)
     datastream.register_processer(conprc)
+    datastream.register_processer(dronenumprc)
     datastream.process_stream(config)
     prcddata.append_zone(hubprc.output())
     prcddata.append_connection(conprc.output())
+    prcddata.create_drones(dronenumprc.output()[1])
