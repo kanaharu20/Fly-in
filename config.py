@@ -2,6 +2,7 @@ from pydantic import BaseModel, model_validator, Field
 from enum import Enum
 from abc import ABC, abstractmethod
 import re
+import sys
 
 
 class ZoneTypes(Enum):
@@ -133,7 +134,9 @@ class HubProcesser(DataProcesser):
             return False
         if tmp[0] not in valid:
             return False
-        if not all([tmp[2].lstrip("-").isdigit(), tmp[3].lstrip("-").isdigit()]):
+        if not all(
+            [tmp[2].lstrip("-").isdigit(), tmp[3].lstrip("-").isdigit()]
+                ):
             return False
         bracket: str = " ".join(tmp[4:])
         if not all([bracket.startswith("["), bracket.endswith("]")]):
@@ -200,3 +203,27 @@ class DataStream:
                 if processer.validate(stream[i]) is True:
                     processer.ingest(stream[i], i)
             i += 1
+
+
+def read_file() -> list[str]:
+    argv: list[str] = sys.argv
+    filename: str = argv[1]
+    try:
+        with open(filename) as fd:
+            ret: list[str] = fd.readlines()
+    except Exception as e:
+        print(e)
+    return ret
+
+
+def setup() -> None:
+    config: list[str] = read_file()
+    hubprc = HubProcesser()
+    conprc = ConnectionProcesser()
+    datastream = DataStream()
+    prcddata = ProcessedData()
+    datastream.register_processer(hubprc)
+    datastream.register_processer(conprc)
+    datastream.process_stream(config)
+    prcddata.append_zone(hubprc.output())
+    prcddata.append_connection(conprc.output())
