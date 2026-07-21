@@ -14,13 +14,23 @@ class ZoneTypes(Enum):
 
 class Drone(BaseModel):
     id: int = Field(ge=0)
-    xy: tuple[int, int]
+    zone: Zone
+    on_connection: Connection | None = None
 
     def set_id(self, num: int) -> None:
         self.id = num
 
-    def update_coodinate(self, xy: tuple[int, int]) -> None:
-        self.xy = xy
+    def get_id(self) -> int:
+        return self.id
+
+    def update_zone(self, zone: Zone) -> None:
+        self.zone = zone
+
+    def get_zone(self) -> Zone:
+        return self.zone
+
+    def set_on_connection(self, connection: Connection | None) -> None:
+        self.on_connection = connection
 
 
 class Zone(BaseModel):
@@ -39,16 +49,37 @@ class Zone(BaseModel):
             )
         return self
 
+    def get_name(self) -> str:
+        return self.name
+
+    def get_xy(self) -> tuple[int, int]:
+        return self.xy
+
+    def get_color(self) -> str:
+        return self.color
+
+    def get_max_drones(self) -> int:
+        return self.max_drones
+
+    def get_zone_type(self) -> ZoneTypes:
+        return self.zone_type
+
 
 class Connection(BaseModel):
-    name: set
+    name: frozenset[str]
     capacity: int = Field(default=1, ge=1)
+
+    def get_name(self) -> frozenset[str]:
+        return self.name
+
+    def get_capa(self) -> None:
+        return self.capacity
 
 
 class ProcessedData:
     def __init__(self) -> None:
         self._zone_dict: dict[str, Zone] = {}
-        self._connection_dict: dict[set, Connection] = {}
+        self._connection_dict: dict[frozenset[str], Connection] = {}
         self._zone_name_list: list[str] = []
         self._start_hub: Zone
         self._end_hub: Zone
@@ -57,8 +88,9 @@ class ProcessedData:
     def create_drones(self, nb: int) -> dict[int, Drone]:
         for id in range(nb):
             self._drone_dict[id] = Drone(
-                id=id, xy=self._start_hub.xy
+                id=id, zone=self._start_hub
                 )
+        return self._drone_dict
 
     def append_zone(self, data: list[tuple]) -> None:
         for line in data:
@@ -88,7 +120,10 @@ class ProcessedData:
                         elif type_name == "blocked":
                             zone_type = ZoneTypes.BLOCKED
                         else:
-                            raise ValueError
+                            raise ValueError(
+                                f"unknown zone type '{type_name}', expected "
+                                f"'restricted', 'priority', or 'blocked'"
+                            )
             zone: Zone = Zone(
                 name=tmp[0], xy=xy, color=color,
                 max_drones=max_drones, zone_type=zone_type
@@ -112,7 +147,10 @@ class ProcessedData:
             zone_names = tmp[0].split("-")
             for name in zone_names:
                 if name not in zone_name_list:
-                    raise ValueError(f"{name} is not found in hub names.")
+                    raise ValueError(
+                        f"connection references unknown zone '{name}'; "
+                        f"it must be declared as a hub first"
+                    )
             name_set = frozenset(zone_names)
             max_link_capa: int = 1
             if len(tmp) > 1:
@@ -145,9 +183,15 @@ class DroneNumProcesser(DataProcesser):
         if tmp[0].strip() != "nb_drones":
             return False
         if len(tmp) != 2:
-            raise ValueError(f"at line {line_num} error occered")
+            raise ValueError(
+                f"line {line_num}: 'nb_drones' declaration must contain "
+                f"exactly one ':', got '{data}'"
+            )
         if not tmp[1].strip().isdigit():
-            raise ValueError(f"at line {line_num} error occered")
+            raise ValueError(
+                f"line {line_num}: 'nb_drones' value must be a "
+                f"non-negative integer, got '{tmp[1].strip()}'"
+            )
         return True
 
     def ingest(self, data: str, line_num: int) -> None:
@@ -160,61 +204,96 @@ class HubProcesser(DataProcesser):
         valid: list[str] = ["start_hub", "hub", "end_hub"]
         tmp: list[str] = list(x for x in re.split(r"[: ]", data.strip()) if x)
         if tmp[0] not in valid:
-            raise False
+            return False
         if len(tmp) < 5:
-            raise ValueError(f"at line {line_num} error occered")
+            raise ValueError(
+                f"line {line_num}: hub declaration needs a name, x, y and "
+                f"a '[...]' metadata block, got '{data}'"
+            )
         if not all(
             [tmp[2].lstrip("-").isdigit(), tmp[3].lstrip("-").isdigit()]
                 ):
-            raise ValueError(f"at line {line_num} error occered")
+            raise ValueError(
+                f"line {line_num}: hub coordinates must be integers, "
+                f"got x='{tmp[2]}' y='{tmp[3]}'"
+            )
         bracket: str = " ".join(tmp[4:])
         if not all([bracket.startswith("["), bracket.endswith("]")]):
-            raise ValueError(f"at line {line_num} error occered")
+            raise ValueError(
+                f"line {line_num}: hub metadata must be wrapped in "
+                f"'[' and ']', got '{bracket}'"
+            )
         meta_data: list = bracket.strip("[]").split(" ")
         meta_data = [part for pair in meta_data for part in pair.split("=")]
         if len(meta_data) % 2 == 1:
-            raise ValueError(f"at line {line_num} error occered")
+            raise ValueError(
+                f"line {line_num}: every metadata entry needs a "
+                f"'key=value' pair, got '{bracket}'"
+            )
         i: int = 0
         while i < len(meta_data):
             if i % 2 == 0:
                 if meta_data[i] not in [
                     "color", "max_drones", "zone"
                         ]:
-                    raise ValueError(f"at line {line_num} error occered")
+                    raise ValueError(
+                        f"line {line_num}: unknown metadata key "
+                        f"'{meta_data[i]}', expected 'color', "
+                        f"'max_drones', or 'zone'"
+                    )
             else:
                 if meta_data[i - 1] == "max_drones":
                     if not meta_data[i].isdigit():
-                        raise ValueError(f"at line {line_num} error occered")
+                        raise ValueError(
+                            f"line {line_num}: 'max_drones' must be a "
+                            f"non-negative integer, got '{meta_data[i]}'"
+                        )
             i += 1
         return True
 
     def ingest(self, data: str, line_num: int) -> None:
-        if self.validate(data):
+        if self.validate(data, line_num):
             self._processed_data.append((line_num, data))
 
 
 class ConnectionProcesser(DataProcesser):
-    def validate(self, data: str, line_num: str):
+    def validate(self, data: str, line_num: int):
         tmp: list[str] = list(x for x in re.split(r"[ :]", data.strip()) if x)
         if tmp[0].strip() != "connection":
             return False
         if len(tmp) not in (2, 3):
-            raise ValueError(f"at line {line_num} error occered")
+            raise ValueError(
+                f"line {line_num}: connection declaration must have 1 or 2 "
+                f"fields after 'connection:', got '{data}'"
+            )
         if len(tmp[1].split("-")) != 2:
-            raise ValueError(f"at line {line_num} error occered")
+            raise ValueError(
+                f"line {line_num}: connection must link exactly two zone "
+                f"names joined by '-', got '{tmp[1]}'"
+            )
         if len(tmp) == 3:
             if not all([tmp[2].startswith("["), tmp[2].endswith("]")]):
-                raise ValueError(f"at line {line_num} error occered")
+                raise ValueError(
+                    f"line {line_num}: connection metadata must be "
+                    f"wrapped in '[' and ']', got '{tmp[2]}'"
+                )
             meta_data: list[str] = tmp[2].strip("[]").split("=")
             if len(meta_data) == 2:
                 if meta_data[0].strip() != "max_link_capacity":
-                    raise ValueError(f"at line {line_num} error occered")
+                    raise ValueError(
+                        f"line {line_num}: only 'max_link_capacity' is "
+                        f"allowed in connection metadata, got "
+                        f"'{meta_data[0].strip()}'"
+                    )
             else:
-                raise ValueError(f"at line {line_num} error occered")
+                raise ValueError(
+                    f"line {line_num}: connection metadata must be a "
+                    f"single 'key=value' pair, got '{tmp[2]}'"
+                )
         return True
 
     def ingest(self, data: str, line_num: int) -> None:
-        if self.validate(data):
+        if self.validate(data, line_num):
             self._processed_data.append((line_num, data))
 
 
@@ -233,12 +312,16 @@ class DataStream:
                 continue
             is_processed: int = 0
             for processer in self._processers:
-                if processer.validate(stream[i]) is True:
+                if processer.validate(stream[i], i) is True:
                     processer.ingest(stream[i], i)
                     is_processed = 1
                     break
             if is_processed == 0:
-                raise ValueError(f"at line {i} invalid value.")
+                raise ValueError(
+                    f"line {i}: unrecognized declaration, expected "
+                    f"'nb_drones', 'hub'/'start_hub'/'end_hub', or "
+                    f"'connection', got '{stream[i]}'"
+                )
             i += 1
 
 
@@ -255,12 +338,14 @@ def read_file() -> list[str]:
         ]
     if not meaningful or not meaningful[0].startswith("nb_drones"):
         raise ValueError(
-            "'nb_drones' must be decleared at the first line."
+            "'nb_drones' must be the first declaration in the file "
+            "(blank lines and '#' comments are skipped)."
             )
     for line in meaningful[1:]:
         if line.startswith("nb_drones"):
             raise ValueError(
-                "'nb_drones' must be decleared at the first line."
+                "'nb_drones' must be declared exactly once, at the top "
+                "of the file."
                 )
 
     return ret

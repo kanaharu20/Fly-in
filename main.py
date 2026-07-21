@@ -1,5 +1,5 @@
 #! /usr/bin/env python3
-from config import setup
+from parse import setup
 
 
 def main() -> None:
