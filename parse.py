@@ -15,7 +15,7 @@ class ZoneTypes(Enum):
 class Drone(BaseModel):
     id: int = Field(ge=0)
     zone: Zone
-    on_connection: Connection | None = None
+    connection_to: Zone | None = None
 
     def set_id(self, num: int) -> None:
         self.id = num
@@ -29,8 +29,11 @@ class Drone(BaseModel):
     def get_zone(self) -> Zone:
         return self.zone
 
-    def set_on_connection(self, connection: Connection | None) -> None:
-        self.on_connection = connection
+    def set_connection_to(self, zone: Zone) -> None:
+        self.connection_to = zone
+
+    def get_connection_to(self) -> None:
+        return self.connection_to
 
 
 class Zone(BaseModel):
@@ -61,6 +64,12 @@ class Zone(BaseModel):
     def get_max_drones(self) -> int:
         return self.max_drones
 
+    def reduce_max_drones(self) -> None:
+        self.max_drones -= 1
+
+    def increase_max_drones(self) -> None:
+        self.max_drones += 1
+
     def get_zone_type(self) -> ZoneTypes:
         return self.zone_type
 
@@ -74,6 +83,12 @@ class Connection(BaseModel):
 
     def get_capa(self) -> None:
         return self.capacity
+
+    def reduce_capa(self) -> None:
+        self.capacity -= 1
+
+    def increase_capa(self) -> None:
+        self.capacity += 1
 
 
 class ProcessedData:
