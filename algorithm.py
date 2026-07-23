@@ -62,8 +62,14 @@ class MoveDrone:
         goal_name = self._data._end_hub.name
         candi_dict = self.build_candi_dict()
         raw_dist = self.dijkstra(goal_name, candi_dict)
-
         goal_cost = self.cost_of(goal_name)
+        if self._data._start_hub.get_name() not in raw_dist.keys():
+            raise ValueError("The goal hub is unreachable from the start hub.")
+        for name, neighbors in candi_dict.items():
+            if not neighbors:
+                raise ValueError(
+                    f"hub '{name}' is not connected to any other zone."
+                    )
         return {
             name: dist + goal_cost - self.cost_of(name)
             for name, dist in raw_dist.items()
@@ -91,14 +97,12 @@ class MoveDrone:
         min_cost = min(list(cost_table[name] for name in neighbours))
 
         for name in neighbours:
-            if (
-                (cost_table[name] == min_cost) and
-                    (self._get_zone(name).get_zone_type() == ZoneTypes.PRIORITY)
+            if cost_table[name] == min_cost:
+                if self._get_zone(name).get_zone_type() == ZoneTypes.PRIORITY:
+                    if self.is_accessible(
+                        self._get_zone(zone), self._get_zone(name)
                     ):
-                if self.is_accessible(
-                    self._get_zone(zone), self._get_zone(name)
-                ):
-                    return name
+                        return name
         for name in neighbours:
             if cost_table[name] == min_cost:
                 if self.is_accessible(
@@ -128,13 +132,18 @@ class MoveDrone:
         if not self._is_hub(next_zone):
             next_zone.reduce_max_drones()
 
-    def move_to_zone(self, drone: Drone, zone: Zone) -> None:
+    def move_to_zone(self, drone: Drone, zone: Zone) -> Connection:
         old_zone: Zone = drone.get_zone()
+        connection: Connection = self._data._connection_dict[
+            frozenset([old_zone.get_name(), zone.get_name()])
+        ]
+        connection.reduce_capa()
         drone.update_zone(zone)
         if not self._is_hub(zone):
             zone.reduce_max_drones()
         if not self._is_hub(old_zone):
             old_zone.increase_max_drones()
+        return connection
 
     def write_log_line(self, changed: list[int]) -> str:
         contains: list[str] = []
@@ -144,7 +153,8 @@ class MoveDrone:
                 connection: Connection = self._data._connection_dict[
                     frozenset([drone.get_connection_to().name,
                                drone.get_zone().name])].get_name()
-                tmp: str = f"D{id_num}-{connection}"
+                connection_name: str = "-".join(connection)
+                tmp: str = f"D{id_num}-{connection_name}"
                 contains.append(tmp)
             else:
                 hub: str = drone.get_zone().get_name()
@@ -157,6 +167,8 @@ class MoveDrone:
         drone_num: int = len(self._data._drone_dict)
         while len(finished) != drone_num:
             changed: list[int] = []
+            used_connections: list[Connection] = []
+
             for i in range(drone_num):
                 if i in finished:
                     continue
@@ -174,19 +186,16 @@ class MoveDrone:
                 if next_hub.get_zone_type() == ZoneTypes.RESTRICTED:
                     self.in_connection(drone, next_hub)
                 else:
-                    self.move_to_zone(drone, next_hub)
+                    used_connections.append(self.move_to_zone(drone, next_hub))
                     if drone.get_zone() == self._data._end_hub:
                         finished.append(drone.get_id())
                 changed.append(i)
+            for connection in used_connections:
+                connection.increase_capa()
             log_line: str = self.write_log_line(changed)
             self._move_log.append(log_line)
 
     def output_log(self) -> None:
         for line in self._move_log:
             print(line)
-
-
-def run():
-    movedrone: MoveDrone = MoveDrone()
-    movedrone.start_algo()
-    movedrone.output_log()
+        print(f"Score: {len(self._move_log)} turns")

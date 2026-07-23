@@ -1,4 +1,4 @@
-from pydantic import BaseModel, model_validator, Field
+from pydantic import BaseModel, model_validator, Field, ValidationError
 from enum import Enum
 from abc import ABC, abstractmethod
 import re
@@ -114,6 +114,11 @@ class ProcessedData:
                     )
             keyword: str = tmp[0]
             tmp = tmp[1:]
+            if tmp[0] in self._zone_name_list:
+                raise ValueError(
+                    f"line {line[0]}: the same name zone has been "
+                    "already registered."
+                    )
             xy: tuple[int, int] = int(tmp[1]), int(tmp[2])
             color: str = ""
             max_drones: int = 1
@@ -136,13 +141,24 @@ class ProcessedData:
                             zone_type = ZoneTypes.BLOCKED
                         else:
                             raise ValueError(
-                                f"unknown zone type '{type_name}', expected "
+                                f"line {line[0]}: unknown zone type "
+                                f"'{type_name}', expected "
                                 f"'restricted', 'priority', or 'blocked'"
                             )
-            zone: Zone = Zone(
-                name=tmp[0], xy=xy, color=color,
-                max_drones=max_drones, zone_type=zone_type
-                )
+            try:
+                zone: Zone = Zone(
+                    name=tmp[0], xy=xy, color=color,
+                    max_drones=max_drones, zone_type=zone_type
+                    )
+            except ValidationError as e:
+                raise ValueError(f"line {line[0]}: {e}") from e
+            if zone.get_xy() in list(
+                xy.get_xy() for xy in self._zone_dict.values()
+                    ):
+                raise ValueError(
+                    f"line {line[0]}: the same zone coordinate has "
+                    "been already registered."
+                    )
             if keyword == "start_hub":
                 self._start_hub = zone
             elif keyword == "end_hub":
@@ -163,16 +179,25 @@ class ProcessedData:
             for name in zone_names:
                 if name not in zone_name_list:
                     raise ValueError(
-                        f"connection references unknown zone '{name}'; "
+                        f"line {line[0]}: connection "
+                        f"references unknown zone '{name}'; "
                         f"it must be declared as a hub first"
                     )
             name_set = frozenset(zone_names)
             max_link_capa: int = 1
             if len(tmp) > 1:
                 max_link_capa = int(tmp[1].strip("[]").split("=")[1])
-            connection: Connection = Connection(
-                name=name_set, capacity=max_link_capa
-            )
+            if name_set in self._connection_dict:
+                raise ValueError(
+                    f"line {line[0]}: the same connection has "
+                    "already been registered."
+                    )
+            try:
+                connection: Connection = Connection(
+                    name=name_set, capacity=max_link_capa
+                )
+            except ValidationError as e:
+                raise ValueError(f"line {line[0]}: {e}") from e
             self._connection_dict[name_set] = connection
 
 

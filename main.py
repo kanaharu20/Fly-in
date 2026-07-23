@@ -5,22 +5,25 @@ from algorithm import MoveDrone
 
 
 def main() -> None:
-    config: list[str] = read_file()
-    hubprc = HubProcesser()
-    conprc = ConnectionProcesser()
-    dronenumprc = DroneNumProcesser()
-    datastream = DataStream()
-    prcddata = ProcessedData()
-    datastream.register_processer(hubprc)
-    datastream.register_processer(conprc)
-    datastream.register_processer(dronenumprc)
-    datastream.process_stream(config)
-    prcddata.append_zone(hubprc.output())
-    prcddata.append_connection(conprc.output())
-    prcddata.create_drones(dronenumprc.output()[1])
-    movedrone: MoveDrone = MoveDrone(prcddata)
-    movedrone.start_algo()
-    movedrone.output_log()
+    try:
+        config: list[str] = read_file()
+        hubprc = HubProcesser()
+        conprc = ConnectionProcesser()
+        dronenumprc = DroneNumProcesser()
+        datastream = DataStream()
+        prcddata = ProcessedData()
+        datastream.register_processer(hubprc)
+        datastream.register_processer(conprc)
+        datastream.register_processer(dronenumprc)
+        datastream.process_stream(config)
+        prcddata.append_zone(hubprc.output())
+        prcddata.append_connection(conprc.output())
+        prcddata.create_drones(dronenumprc.output()[1])
+        movedrone: MoveDrone = MoveDrone(prcddata)
+        movedrone.start_algo()
+        movedrone.output_log()
+    except Exception as e:
+        print(e)
 
 
 if __name__ == "__main__":
