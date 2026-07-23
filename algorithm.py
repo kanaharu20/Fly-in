@@ -1,12 +1,5 @@
 from parse import ProcessedData, Zone, ZoneTypes, Drone, Connection
 import heapq
-from enum import Enum
-
-
-class Action(Enum):
-    ZONE = 1
-    INBETWEEN = 2
-    STOP = 3
 
 
 class MoveDrone:
@@ -76,11 +69,16 @@ class MoveDrone:
             for name, dist in raw_dist.items()
         }
 
+    def _is_hub(self, zone: Zone) -> bool:
+        return zone.name in (
+            self._data._start_hub.name, self._data._end_hub.name
+            )
+
     def is_accessible(self, current: Zone, next: Zone) -> bool:
-        if next.get_max_drones < 1:
+        if not self._is_hub(next) and next.get_max_drones() < 1:
             return False
         connection = self._data._connection_dict[
-            frozenset(current.name, next.name)
+            frozenset([current.name, next.name])
             ]
         if connection.get_capa() < 1:
             return False
@@ -95,7 +93,7 @@ class MoveDrone:
         for name in neighbours:
             if (
                 (cost_table[name] == min_cost) and
-                    (self._get_zone(name).get_zone_type == ZoneTypes.PRIORITY)
+                    (self._get_zone(name).get_zone_type() == ZoneTypes.PRIORITY)
                     ):
                 if self.is_accessible(
                     self._get_zone(zone), self._get_zone(name)
@@ -110,23 +108,49 @@ class MoveDrone:
         return None
 
     def in_connection(self, drone: Drone, zone: Zone) -> None:
+        old_zone: Zone = drone.get_zone()
         drone.set_connection_to(zone)
         connection = self._data._connection_dict[
-            frozenset(drone.get_zone(), zone)
+            frozenset([old_zone.name, zone.name])
             ]
         connection.reduce_capa()
+        if not self._is_hub(old_zone):
+            old_zone.increase_max_drones()
 
     def out_connection(self, drone: Drone) -> None:
-        connection: Connection = self._data[
-            frozenset(drone.get_zone(), drone.get_connection_to())
+        next_zone: Zone = drone.get_connection_to()
+        connection: Connection = self._data._connection_dict[
+            frozenset([drone.get_zone().name, next_zone.name])
         ]
-        drone.zone = drone.get_connection_to()
+        drone.zone = next_zone
         drone.set_connection_to(None)
         connection.increase_capa()
+        if not self._is_hub(next_zone):
+            next_zone.reduce_max_drones()
 
     def move_to_zone(self, drone: Drone, zone: Zone) -> None:
+        old_zone: Zone = drone.get_zone()
         drone.update_zone(zone)
-        zone.reduce_max_drones()
+        if not self._is_hub(zone):
+            zone.reduce_max_drones()
+        if not self._is_hub(old_zone):
+            old_zone.increase_max_drones()
+
+    def write_log_line(self, changed: list[int]) -> str:
+        contains: list[str] = []
+        for id_num in changed:
+            drone: Drone = self._data._drone_dict[id_num]
+            if drone.connection_to is not None:
+                connection: Connection = self._data._connection_dict[
+                    frozenset([drone.get_connection_to().name,
+                               drone.get_zone().name])].get_name()
+                tmp: str = f"D{id_num}-{connection}"
+                contains.append(tmp)
+            else:
+                hub: str = drone.get_zone().get_name()
+                tmp = f"D{id_num}-{hub}"
+                contains.append(tmp)
+        return " ".join(contains)
 
     def start_algo(self) -> None:
         finished: list[int] = []
@@ -134,19 +158,27 @@ class MoveDrone:
         while len(finished) != drone_num:
             changed: list[int] = []
             for i in range(drone_num):
+                if i in finished:
+                    continue
                 drone: Drone = self._data._drone_dict[i]
                 if drone.connection_to is not None:
                     self.out_connection(drone)
                     changed.append(i)
+                    if drone.get_zone() == self._data._end_hub:
+                        finished.append(drone.get_id())
                     continue
-                next_hub: Zone = self.select_zone(drone.get_zone())
-                if next_hub is None:
+                next_hub_name: str = self.select_zone(drone.get_zone().name)
+                if next_hub_name is None:
                     continue
+                next_hub: Zone = self._get_zone(next_hub_name)
                 if next_hub.get_zone_type() == ZoneTypes.RESTRICTED:
                     self.in_connection(drone, next_hub)
-                self.move_to_zone(drone, next_hub)
-                changed.append(drone)
-            log_line: str = " ".join(changed)
+                else:
+                    self.move_to_zone(drone, next_hub)
+                    if drone.get_zone() == self._data._end_hub:
+                        finished.append(drone.get_id())
+                changed.append(i)
+            log_line: str = self.write_log_line(changed)
             self._move_log.append(log_line)
 
     def output_log(self) -> None:
