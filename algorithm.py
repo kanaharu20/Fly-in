@@ -90,7 +90,7 @@ class MoveDrone:
             return False
         return True
 
-    def select_zone(self, zone: str) -> str:
+    def select_zone(self, zone: str) -> str | None:
         neighbours = self.build_candi_dict()[zone]
         cost_table = self.build_cost_table()
 
@@ -120,17 +120,20 @@ class MoveDrone:
         connection.reduce_capa()
         if not self._is_hub(old_zone):
             old_zone.increase_max_drones()
+        # 到着時ではなく「入る時」に目的地の枠を予約する。こうしないと
+        # 別の drone も同じ restricted ゾーンへの接続に入れてしまい、
+        # 同じターンに複数機が到着して容量オーバーになる。
+        if not self._is_hub(zone):
+            zone.reduce_max_drones()
 
-    def out_connection(self, drone: Drone) -> None:
-        next_zone: Zone = drone.get_connection_to()
+    def out_connection(self, drone: Drone, next_zone: Zone) -> None:
         connection: Connection = self._data._connection_dict[
             frozenset([drone.get_zone().name, next_zone.name])
         ]
         drone.zone = next_zone
         drone.set_connection_to(None)
         connection.increase_capa()
-        if not self._is_hub(next_zone):
-            next_zone.reduce_max_drones()
+        # 目的地の枠は in_connection で予約済みなので、ここでは減らさない。
 
     def move_to_zone(self, drone: Drone, zone: Zone) -> Connection:
         old_zone: Zone = drone.get_zone()
@@ -149,11 +152,12 @@ class MoveDrone:
         contains: list[str] = []
         for id_num in changed:
             drone: Drone = self._data._drone_dict[id_num]
-            if drone.connection_to is not None:
-                connection: Connection = self._data._connection_dict[
-                    frozenset([drone.get_connection_to().name,
+            dest: Zone | None = drone.get_connection_to()
+            if dest is not None:
+                names: frozenset[str] = self._data._connection_dict[
+                    frozenset([dest.name,
                                drone.get_zone().name])].get_name()
-                connection_name: str = "-".join(connection)
+                connection_name: str = "-".join(names)
                 tmp: str = f"D{id_num}-{connection_name}"
                 contains.append(tmp)
             else:
@@ -174,12 +178,13 @@ class MoveDrone:
                     continue
                 drone: Drone = self._data._drone_dict[i]
                 if drone.connection_to is not None:
-                    self.out_connection(drone)
+                    self.out_connection(drone, drone.connection_to)
                     changed.append(i)
                     if drone.get_zone() == self._data._end_hub:
                         finished.append(drone.get_id())
                     continue
-                next_hub_name: str = self.select_zone(drone.get_zone().name)
+                next_hub_name: str | None = self.select_zone(
+                    drone.get_zone().name)
                 if next_hub_name is None:
                     continue
                 next_hub: Zone = self._get_zone(next_hub_name)
@@ -194,6 +199,9 @@ class MoveDrone:
                 connection.increase_capa()
             log_line: str = self.write_log_line(changed)
             self._move_log.append(log_line)
+
+    def get_log(self) -> list[str]:
+        return self._move_log
 
     def output_log(self) -> None:
         for line in self._move_log:

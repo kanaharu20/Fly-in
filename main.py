@@ -2,6 +2,7 @@
 from parse import HubProcesser, ConnectionProcesser, DroneNumProcesser
 from parse import DataStream, ProcessedData, read_file
 from algorithm import MoveDrone
+from visualize import Visualizer
 
 
 def main() -> None:
@@ -22,6 +23,8 @@ def main() -> None:
         movedrone: MoveDrone = MoveDrone(prcddata)
         movedrone.start_algo()
         movedrone.output_log()
+        visualizer: Visualizer = Visualizer(prcddata)
+        visualizer.render(movedrone.get_log())
     except Exception as e:
         print(e)
 

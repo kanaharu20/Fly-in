@@ -12,30 +12,6 @@ class ZoneTypes(Enum):
     BLOCKED = "blocked"
 
 
-class Drone(BaseModel):
-    id: int = Field(ge=0)
-    zone: Zone
-    connection_to: Zone | None = None
-
-    def set_id(self, num: int) -> None:
-        self.id = num
-
-    def get_id(self) -> int:
-        return self.id
-
-    def update_zone(self, zone: Zone) -> None:
-        self.zone = zone
-
-    def get_zone(self) -> Zone:
-        return self.zone
-
-    def set_connection_to(self, zone: Zone) -> None:
-        self.connection_to = zone
-
-    def get_connection_to(self) -> None:
-        return self.connection_to
-
-
 class Zone(BaseModel):
     name: str
     xy: tuple[int, int]
@@ -74,6 +50,30 @@ class Zone(BaseModel):
         return self.zone_type
 
 
+class Drone(BaseModel):
+    id: int = Field(ge=0)
+    zone: Zone
+    connection_to: Zone | None = None
+
+    def set_id(self, num: int) -> None:
+        self.id = num
+
+    def get_id(self) -> int:
+        return self.id
+
+    def update_zone(self, zone: Zone) -> None:
+        self.zone = zone
+
+    def get_zone(self) -> Zone:
+        return self.zone
+
+    def set_connection_to(self, zone: Zone | None) -> None:
+        self.connection_to = zone
+
+    def get_connection_to(self) -> Zone | None:
+        return self.connection_to
+
+
 class Connection(BaseModel):
     name: frozenset[str]
     capacity: int = Field(default=1, ge=1)
@@ -81,7 +81,7 @@ class Connection(BaseModel):
     def get_name(self) -> frozenset[str]:
         return self.name
 
-    def get_capa(self) -> None:
+    def get_capa(self) -> int:
         return self.capacity
 
     def reduce_capa(self) -> None:
@@ -107,7 +107,7 @@ class ProcessedData:
                 )
         return self._drone_dict
 
-    def append_zone(self, data: list[tuple]) -> None:
+    def append_zone(self, data: list[tuple[int, str]]) -> None:
         for line in data:
             tmp: list[str] = list(x for x in re.split(
                 r"[: ]", line[1].strip()) if x
@@ -126,13 +126,13 @@ class ProcessedData:
             if len(tmp) > 3:
                 bracket: str = " ".join(tmp[3:])
                 meta_data: list[str] = bracket.strip("[]").split(" ")
-                for data in meta_data:
-                    if "color" in data:
-                        color = data.split("=")[1]
-                    if "max_drones" in data:
-                        max_drones = int(data.split("=")[1])
-                    if "zone" in data:
-                        type_name = data.split("=")[1].strip()
+                for item in meta_data:
+                    if "color" in item:
+                        color = item.split("=")[1]
+                    if "max_drones" in item:
+                        max_drones = int(item.split("=")[1])
+                    if "zone" in item:
+                        type_name = item.split("=")[1].strip()
                         if type_name == "restricted":
                             zone_type = ZoneTypes.RESTRICTED
                         elif type_name == "priority":
@@ -167,7 +167,7 @@ class ProcessedData:
                 self._zone_dict[tmp[0]] = zone
                 self._zone_name_list.append(tmp[0])
 
-    def append_connection(self, data: list[tuple]) -> None:
+    def append_connection(self, data: list[tuple[int, str]]) -> None:
         zone_name_list: list[str] = [self._start_hub.name, self._end_hub.name]
         for zone in self._zone_dict.values():
             zone_name_list.append(zone.name)
@@ -202,9 +202,6 @@ class ProcessedData:
 
 
 class DataProcesser(ABC):
-    def __init__(self) -> None:
-        self._processed_data: list[tuple] = []
-
     @abstractmethod
     def validate(self, data: str, line_num: int) -> bool:
         ...
@@ -213,12 +210,12 @@ class DataProcesser(ABC):
     def ingest(self, data: str, line_num: int) -> None:
         ...
 
-    def output(self) -> str:
-        return self._processed_data
-
 
 class DroneNumProcesser(DataProcesser):
-    def validate(self, data: str, line_num: int):
+    def __init__(self) -> None:
+        self._processed_data: tuple[int, int] = (0, 0)
+
+    def validate(self, data: str, line_num: int) -> bool:
         tmp: list[str] = data.strip().split(":")
         if tmp[0].strip() != "nb_drones":
             return False
@@ -238,17 +235,23 @@ class DroneNumProcesser(DataProcesser):
         tmp: list[str] = data.strip().split(":")
         self._processed_data = (line_num, int(tmp[1].strip()))
 
+    def output(self) -> tuple[int, int]:
+        return self._processed_data
+
 
 class HubProcesser(DataProcesser):
-    def validate(self, data: str, line_num: int):
+    def __init__(self) -> None:
+        self._processed_data: list[tuple[int, str]] = []
+
+    def validate(self, data: str, line_num: int) -> bool:
         valid: list[str] = ["start_hub", "hub", "end_hub"]
         tmp: list[str] = list(x for x in re.split(r"[: ]", data.strip()) if x)
         if tmp[0] not in valid:
             return False
-        if len(tmp) < 5:
+        if len(tmp) < 4:
             raise ValueError(
-                f"line {line_num}: hub declaration needs a name, x, y and "
-                f"a '[...]' metadata block, got '{data}'"
+                f"line {line_num}: hub declaration needs a name, x and y, "
+                f"got '{data}'"
             )
         if not all(
             [tmp[2].lstrip("-").isdigit(), tmp[3].lstrip("-").isdigit()]
@@ -257,13 +260,15 @@ class HubProcesser(DataProcesser):
                 f"line {line_num}: hub coordinates must be integers, "
                 f"got x='{tmp[2]}' y='{tmp[3]}'"
             )
+        if len(tmp) == 4:
+            return True
         bracket: str = " ".join(tmp[4:])
         if not all([bracket.startswith("["), bracket.endswith("]")]):
             raise ValueError(
                 f"line {line_num}: hub metadata must be wrapped in "
                 f"'[' and ']', got '{bracket}'"
             )
-        meta_data: list = bracket.strip("[]").split(" ")
+        meta_data: list[str] = bracket.strip("[]").split(" ")
         meta_data = [part for pair in meta_data for part in pair.split("=")]
         if len(meta_data) % 2 == 1:
             raise ValueError(
@@ -295,9 +300,15 @@ class HubProcesser(DataProcesser):
         if self.validate(data, line_num):
             self._processed_data.append((line_num, data))
 
+    def output(self) -> list[tuple[int, str]]:
+        return self._processed_data
+
 
 class ConnectionProcesser(DataProcesser):
-    def validate(self, data: str, line_num: int):
+    def __init__(self) -> None:
+        self._processed_data: list[tuple[int, str]] = []
+
+    def validate(self, data: str, line_num: int) -> bool:
         tmp: list[str] = list(x for x in re.split(r"[ :]", data.strip()) if x)
         if tmp[0].strip() != "connection":
             return False
@@ -335,6 +346,9 @@ class ConnectionProcesser(DataProcesser):
     def ingest(self, data: str, line_num: int) -> None:
         if self.validate(data, line_num):
             self._processed_data.append((line_num, data))
+
+    def output(self) -> list[tuple[int, str]]:
+        return self._processed_data
 
 
 class DataStream:
@@ -389,19 +403,3 @@ def read_file() -> list[str]:
                 )
 
     return ret
-
-
-def setup() -> None:
-    config: list[str] = read_file()
-    hubprc = HubProcesser()
-    conprc = ConnectionProcesser()
-    dronenumprc = DroneNumProcesser()
-    datastream = DataStream()
-    prcddata = ProcessedData()
-    datastream.register_processer(hubprc)
-    datastream.register_processer(conprc)
-    datastream.register_processer(dronenumprc)
-    datastream.process_stream(config)
-    prcddata.append_zone(hubprc.output())
-    prcddata.append_connection(conprc.output())
-    prcddata.create_drones(dronenumprc.output()[1])
