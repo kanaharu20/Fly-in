@@ -45,10 +45,6 @@ You can also run it directly:
 python main.py <map_file>
 ```
 
-When the output is a terminal, a colored visualization is shown in addition
-to the plain log. When the output is piped or redirected, only the plain,
-spec-compliant log is produced (so it stays easy to parse).
-
 ## Example input and expected output
 
 Input (`maps/easy/01_linear_path.txt`):
@@ -67,7 +63,9 @@ connection: waypoint1-waypoint2
 connection: waypoint2-goal
 ```
 
-Expected output (plain log):
+Running the program prints the colored visualization described below. The
+underlying per-turn movement format (also available via
+`MoveDrone.output_log()`) is:
 
 ```
 D0-waypoint1
@@ -119,20 +117,35 @@ every turn on any connected map.
 
 ### Visual representation (`visualize.py`)
 
-The `Visualizer` renders the run to the terminal. When stdout is a TTY it
-prints:
+The `Visualizer` renders the run to the terminal with ANSI colors. It prints:
 
 - a **zone legend** — each zone with a colored swatch (from its `color=`
   metadata), its role/type, and its capacity, giving an at-a-glance view of
-  the network's state;
-- the **per-turn movements**, with each destination zone colored by its
-  zone color and drones in flight dimmed;
+  the network;
+- the **per-turn movements** (`Turn N: ...`), with each destination zone
+  colored by its zone color and drones in flight toward a `restricted` zone
+  dimmed;
 - **secondary metrics** (drone count, total turns/score, average moves per
   turn) to help peers compare performance.
 
-When stdout is not a TTY the visualizer stays silent and only the plain
-spec-format log (from `output_log`) is emitted, so redirected output remains
-machine-readable.
+Colors come from a small name→ANSI table, so any `color=` word that is not
+in the table is printed without color instead of causing an error. The plain,
+spec-format movement log is still available programmatically through
+`MoveDrone.output_log()`.
+
+#### Ideas for further visualization
+
+- **Live board view**: redraw the network every turn showing, per zone, how
+  many drones currently occupy it (an occupancy count or heatmap), instead of
+  only listing the moves.
+- **Coordinate-based ASCII map**: use each zone's `x y` to lay it out on a
+  grid and draw the connections, so the topology is visible in the terminal.
+- **Graphical interface** (Tkinter / pygame / matplotlib): animate the drones
+  moving along the edges turn by turn, with step / pause / replay controls.
+- **Congestion highlighting**: color zones and connections by how often they
+  sit at full capacity, to reveal bottlenecks.
+- **Per-drone paths**: give each drone its own color and trace its route from
+  start to end.
 
 ## Performance
 
@@ -164,9 +177,24 @@ All provided maps meet the subject's reference targets:
 
 ### Use of AI
 
-AI (Claude Code) was used to review the codebase against the subject and to
-assist with: fixing type-safety issues so the project passes `mypy`,
-correcting parser behavior (accepting hubs without optional metadata),
-fixing a zone-capacity bug affecting `restricted` zones, and implementing
-the colored terminal visualization. All AI-suggested changes were reviewed
-and are understood by the author.
+AI (Claude Code) was used as an assistant, always with the final code reviewed
+and understood by the author:
+
+- **Pre-review of the whole project** against the subject: an AI pass read the
+  code and flagged spec mismatches and bugs — for example hubs written without
+  the optional `[...]` metadata being rejected, and a zone-capacity bug where
+  two drones could arrive in the same `restricted` zone on one turn. These were
+  then fixed and re-checked on every provided map.
+- **Type safety (`mypy`)**: help making the project pass `mypy` and
+  `mypy --strict` — correcting wrong return-type annotations and narrowing
+  `Optional` values properly.
+- **Style (`flake8`)**: keeping the code within the `flake8` standard (line
+  length, imports, trailing newlines) and adding the `.flake8` config that
+  excludes the virtual environment.
+- **Docstrings**: drafting the concise PEP 257 docstrings on the classes and
+  the main methods.
+- **Visualization**: implementing the colored terminal `Visualizer`.
+
+AI was mainly used to speed up review and reduce boilerplate; the algorithm
+design and every accepted change were verified by the author.
+

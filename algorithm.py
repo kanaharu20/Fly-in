@@ -3,11 +3,14 @@ import heapq
 
 
 class MoveDrone:
+    """Schedule the drones from start to end and record each turn."""
+
     def __init__(self, data: ProcessedData):
         self._move_log: list[str] = []
         self._data: ProcessedData = data
 
     def _get_zone(self, name: str) -> Zone:
+        """Look up a zone by name (including the start/end hubs)."""
         if name == self._data._start_hub.name:
             return self._data._start_hub
         if name == self._data._end_hub.name:
@@ -15,6 +18,7 @@ class MoveDrone:
         return self._data._zone_dict[name]
 
     def build_candi_dict(self) -> dict[str, list[str]]:
+        """Map each non-blocked zone to its non-blocked neighbors."""
         all_zones = list(self._data._zone_dict.values())
         all_zones.append(self._data._start_hub)
         all_zones.append(self._data._end_hub)
@@ -36,12 +40,14 @@ class MoveDrone:
         return candi_dict
 
     def cost_of(self, name: str) -> int:
+        """Return the turn cost to enter a zone (restricted = 2, else 1)."""
         zone = self._get_zone(name)
         return 2 if zone.zone_type == ZoneTypes.RESTRICTED else 1
 
     def dijkstra(
             self, start: str, candi_dict: dict[str, list[str]]
             ) -> dict[str, int]:
+        """Shortest weighted distance from ``start`` to every zone."""
         dist: dict[str, int] = {start: 0}
         queue: list[tuple[int, str]] = [(0, start)]
 
@@ -59,6 +65,7 @@ class MoveDrone:
         return dist
 
     def build_cost_table(self) -> dict[str, int]:
+        """Cost-to-goal for every zone; raise if the map is unusable."""
         goal_name = self._data._end_hub.name
         candi_dict = self.build_candi_dict()
         raw_dist = self.dijkstra(goal_name, candi_dict)
@@ -76,11 +83,13 @@ class MoveDrone:
         }
 
     def _is_hub(self, zone: Zone) -> bool:
+        """True if the zone is the start or end hub (unlimited)."""
         return zone.name in (
             self._data._start_hub.name, self._data._end_hub.name
             )
 
     def is_accessible(self, current: Zone, next: Zone) -> bool:
+        """True if a drone may move current -> next right now."""
         if not self._is_hub(next) and next.get_max_drones() < 1:
             return False
         connection = self._data._connection_dict[
@@ -91,6 +100,7 @@ class MoveDrone:
         return True
 
     def select_zone(self, zone: str) -> str | None:
+        """Pick the best accessible next zone, or None if all blocked."""
         neighbours = self.build_candi_dict()[zone]
         cost_table = self.build_cost_table()
 
@@ -112,6 +122,7 @@ class MoveDrone:
         return None
 
     def in_connection(self, drone: Drone, zone: Zone) -> None:
+        """Start a 2-turn move: put the drone onto the connection."""
         old_zone: Zone = drone.get_zone()
         drone.set_connection_to(zone)
         connection = self._data._connection_dict[
@@ -127,6 +138,7 @@ class MoveDrone:
             zone.reduce_max_drones()
 
     def out_connection(self, drone: Drone, next_zone: Zone) -> None:
+        """Finish a 2-turn move: land the drone on its target zone."""
         connection: Connection = self._data._connection_dict[
             frozenset([drone.get_zone().name, next_zone.name])
         ]
@@ -136,6 +148,7 @@ class MoveDrone:
         # 目的地の枠は in_connection で予約済みなので、ここでは減らさない。
 
     def move_to_zone(self, drone: Drone, zone: Zone) -> Connection:
+        """Do a 1-turn move and return the connection it used."""
         old_zone: Zone = drone.get_zone()
         connection: Connection = self._data._connection_dict[
             frozenset([old_zone.get_name(), zone.get_name()])
@@ -149,6 +162,7 @@ class MoveDrone:
         return connection
 
     def write_log_line(self, changed: list[int]) -> str:
+        """Format one turn's moves as ``D<id>-<zone|connection>`` tokens."""
         contains: list[str] = []
         for id_num in changed:
             drone: Drone = self._data._drone_dict[id_num]
@@ -167,6 +181,7 @@ class MoveDrone:
         return " ".join(contains)
 
     def start_algo(self) -> None:
+        """Run the turn-by-turn simulation until all drones arrive."""
         finished: list[int] = []
         drone_num: int = len(self._data._drone_dict)
         while len(finished) != drone_num:
@@ -201,9 +216,11 @@ class MoveDrone:
             self._move_log.append(log_line)
 
     def get_log(self) -> list[str]:
+        """Return the recorded per-turn move log."""
         return self._move_log
 
     def output_log(self) -> None:
+        """Print the plain spec-format log and the final score."""
         for line in self._move_log:
             print(line)
         print(f"Score: {len(self._move_log)} turns")

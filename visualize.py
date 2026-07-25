@@ -1,15 +1,12 @@
 from parse import ProcessedData, Zone
-import sys
 
 
 class Visualizer:
     """Render the drone simulation to the terminal.
 
-    When stdout is a TTY the output is colored and annotated (a zone
-    legend plus a per-turn view).  When the output is piped or
-    redirected it falls back to the plain, machine-readable format
-    required by the subject (one line per turn, ``D<id>-<zone>``
-    tokens separated by spaces).
+    Prints a colored zone legend, a per-turn view of the drone
+    movements (each destination colored by its zone color, drones in
+    flight dimmed) and a few secondary metrics.
     """
 
     RESET = "\033[0m"
@@ -31,13 +28,8 @@ class Visualizer:
         "orange": "\033[38;5;208m",
     }
 
-    def __init__(
-        self, data: ProcessedData, use_color: bool | None = None
-    ) -> None:
+    def __init__(self, data: ProcessedData) -> None:
         self._data = data
-        if use_color is None:
-            use_color = sys.stdout.isatty()
-        self._use_color = use_color
         self._color_of: dict[str, str] = {
             zone.get_name(): zone.get_color()
             for zone in self._all_zones()
@@ -50,19 +42,16 @@ class Visualizer:
         return zones
 
     def _paint(self, text: str, color: str) -> str:
-        if not self._use_color:
-            return text
         code = self.COLOR_CODES.get(color.lower())
         if code is None:
             return text
         return f"{code}{text}{self.RESET}"
 
     def _wrap(self, text: str, code: str) -> str:
-        if not self._use_color:
-            return text
         return f"{code}{text}{self.RESET}"
 
     def render_legend(self) -> None:
+        """Print each zone with a colored swatch, role and capacity."""
         start = self._data._start_hub.get_name()
         end = self._data._end_hub.get_name()
         print("Zones:")
@@ -86,17 +75,12 @@ class Visualizer:
             if rest in self._color_of:
                 rest = self._paint(rest, self._color_of[rest])
             else:
-                # In flight toward a restricted zone (a connection name).
                 rest = self._wrap(rest, self.DIM)
             painted.append(f"{head}{sep}{rest}")
         return f"Turn {turn_no:>3}: " + " ".join(painted)
 
     def render(self, move_log: list[str]) -> None:
-        # When piped/redirected, output_log already printed the plain
-        # spec-format log; stay silent so that output is not doubled.
-        if not self._use_color:
-            return
-        print()
+        """Print the legend, the colored per-turn moves and metrics."""
         print(self._wrap("=== Visualization ===", self.BOLD))
         self.render_legend()
         print()

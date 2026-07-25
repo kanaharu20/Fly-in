@@ -6,6 +6,7 @@ from visualize import Visualizer
 
 
 def main() -> None:
+    """Parse the map, run the simulation and render the result."""
     try:
         config: list[str] = read_file()
         hubprc = HubProcesser()
@@ -22,7 +23,6 @@ def main() -> None:
         prcddata.create_drones(dronenumprc.output()[1])
         movedrone: MoveDrone = MoveDrone(prcddata)
         movedrone.start_algo()
-        movedrone.output_log()
         visualizer: Visualizer = Visualizer(prcddata)
         visualizer.render(movedrone.get_log())
     except Exception as e:

@@ -6,6 +6,8 @@ import sys
 
 
 class ZoneTypes(Enum):
+    """The four zone types and their string values."""
+
     NORMAL = "normal"
     RESTRICTED = "restricted"
     PRIORITY = "priority"
@@ -13,6 +15,8 @@ class ZoneTypes(Enum):
 
 
 class Zone(BaseModel):
+    """A single zone (graph node) with its metadata and live capacity."""
+
     name: str
     xy: tuple[int, int]
     color: str
@@ -21,6 +25,7 @@ class Zone(BaseModel):
 
     @model_validator(mode="after")
     def zone_validate(self) -> "Zone":
+        """Reject zone names that contain a space or a dash."""
         if any([' ' in self.name, '-' in self.name]):
             raise ValueError(
                 "Zone names can use any valid "
@@ -41,9 +46,11 @@ class Zone(BaseModel):
         return self.max_drones
 
     def reduce_max_drones(self) -> None:
+        """Take one free slot (a drone entered this zone)."""
         self.max_drones -= 1
 
     def increase_max_drones(self) -> None:
+        """Give back one free slot (a drone left this zone)."""
         self.max_drones += 1
 
     def get_zone_type(self) -> ZoneTypes:
@@ -51,6 +58,8 @@ class Zone(BaseModel):
 
 
 class Drone(BaseModel):
+    """A drone: its id, current zone and, if in flight, its target."""
+
     id: int = Field(ge=0)
     zone: Zone
     connection_to: Zone | None = None
@@ -75,6 +84,8 @@ class Drone(BaseModel):
 
 
 class Connection(BaseModel):
+    """A bidirectional edge between two zones, with live capacity."""
+
     name: frozenset[str]
     capacity: int = Field(default=1, ge=1)
 
@@ -85,13 +96,17 @@ class Connection(BaseModel):
         return self.capacity
 
     def reduce_capa(self) -> None:
+        """Take one free slot on this connection for the current turn."""
         self.capacity -= 1
 
     def increase_capa(self) -> None:
+        """Give back one free slot on this connection."""
         self.capacity += 1
 
 
 class ProcessedData:
+    """Holds the parsed map: zones, connections, drones and the hubs."""
+
     def __init__(self) -> None:
         self._zone_dict: dict[str, Zone] = {}
         self._connection_dict: dict[frozenset[str], Connection] = {}
@@ -101,6 +116,7 @@ class ProcessedData:
         self._drone_dict: dict[int, Drone] = {}
 
     def create_drones(self, nb: int) -> dict[int, Drone]:
+        """Create ``nb`` drones, all starting on the start hub."""
         for id in range(nb):
             self._drone_dict[id] = Drone(
                 id=id, zone=self._start_hub
@@ -108,6 +124,7 @@ class ProcessedData:
         return self._drone_dict
 
     def append_zone(self, data: list[tuple[int, str]]) -> None:
+        """Build ``Zone`` objects from validated hub lines."""
         for line in data:
             tmp: list[str] = list(x for x in re.split(
                 r"[: ]", line[1].strip()) if x
@@ -168,6 +185,7 @@ class ProcessedData:
                 self._zone_name_list.append(tmp[0])
 
     def append_connection(self, data: list[tuple[int, str]]) -> None:
+        """Build ``Connection`` objects from validated connection lines."""
         zone_name_list: list[str] = [self._start_hub.name, self._end_hub.name]
         for zone in self._zone_dict.values():
             zone_name_list.append(zone.name)
@@ -202,16 +220,22 @@ class ProcessedData:
 
 
 class DataProcesser(ABC):
+    """Strategy interface: one processor per kind of input line."""
+
     @abstractmethod
     def validate(self, data: str, line_num: int) -> bool:
+        """Return True if this processor handles the line (else raise)."""
         ...
 
     @abstractmethod
     def ingest(self, data: str, line_num: int) -> None:
+        """Store the line for later use once it has been validated."""
         ...
 
 
 class DroneNumProcesser(DataProcesser):
+    """Handles the ``nb_drones: <n>`` declaration."""
+
     def __init__(self) -> None:
         self._processed_data: tuple[int, int] = (0, 0)
 
@@ -240,6 +264,8 @@ class DroneNumProcesser(DataProcesser):
 
 
 class HubProcesser(DataProcesser):
+    """Handles ``start_hub``/``hub``/``end_hub`` declarations."""
+
     def __init__(self) -> None:
         self._processed_data: list[tuple[int, str]] = []
 
@@ -305,6 +331,8 @@ class HubProcesser(DataProcesser):
 
 
 class ConnectionProcesser(DataProcesser):
+    """Handles ``connection: <a>-<b> [metadata]`` declarations."""
+
     def __init__(self) -> None:
         self._processed_data: list[tuple[int, str]] = []
 
@@ -352,13 +380,17 @@ class ConnectionProcesser(DataProcesser):
 
 
 class DataStream:
+    """Dispatch each input line to the first processor that accepts it."""
+
     def __init__(self) -> None:
         self._processers: list[DataProcesser] = []
 
     def register_processer(self, prc: DataProcesser) -> None:
+        """Add a processor to the dispatch list."""
         self._processers.append(prc)
 
     def process_stream(self, stream: list[str]) -> None:
+        """Route every non-comment line to a matching processor."""
         i: int = 0
         while i < len(stream):
             if not stream[i] or stream[i].startswith("#"):
@@ -380,6 +412,7 @@ class DataStream:
 
 
 def read_file() -> list[str]:
+    """Read the map file from argv[1] and check the nb_drones header."""
     argv: list[str] = sys.argv
     filename: str = argv[1]
     with open(filename) as fd:
