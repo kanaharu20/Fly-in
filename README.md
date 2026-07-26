@@ -167,7 +167,6 @@ All provided maps meet the subject's reference targets:
 ## Resources
 
 - Dijkstra's shortest path algorithm — for the cost-to-goal table.
-- 42's `lem-in` project — classic inspiration for turn-based multi-agent
   routing on a graph.
 - [pydantic documentation](https://docs.pydantic.dev/) — typed, validated
   data models.
@@ -180,7 +179,7 @@ All provided maps meet the subject's reference targets:
 AI (Claude Code) was used as an assistant, always with the final code reviewed
 and understood by the author:
 
-- **Pre-review of the whole project** against the subject: an AI pass read the
+- **Pre-review of the whole project** : an AI pass read the
   code and flagged spec mismatches and bugs — for example hubs written without
   the optional `[...]` metadata being rejected, and a zone-capacity bug where
   two drones could arrive in the same `restricted` zone on one turn. These were
@@ -193,8 +192,4 @@ and understood by the author:
   excludes the virtual environment.
 - **Docstrings**: drafting the concise PEP 257 docstrings on the classes and
   the main methods.
-- **Visualization**: implementing the colored terminal `Visualizer`.
-
-AI was mainly used to speed up review and reduce boilerplate; the algorithm
-design and every accepted change were verified by the author.
-
+- **Visualization**: help implementing the colored terminal `Visualizer`.
